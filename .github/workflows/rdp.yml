@@ -1,0 +1,63 @@
+name: Gmail-RDP
+
+on:
+  workflow_dispatch:
+
+jobs:
+  setup-rdp-tunnel:
+    runs-on: windows-latest
+
+    steps:
+    # Step 1: Check out the repository
+    - name: Check out the repository
+      uses: actions/checkout@v2
+
+    # Step 2: Download and install Playit
+    - name: Download and Install Playit
+      run: |
+        Invoke-WebRequest -Uri "https://github.com/playit-cloud/playit-agent/releases/download/v0.15.26/playit-windows-x86_64-signed.exe" -OutFile "$env:USERPROFILE\playit.exe"
+        Start-Sleep -Seconds 5
+
+    # Step 3: Enable Remote Desktop features and configure user
+    - name: Enable Remote Desktop
+      run: |
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
+        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
+        Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "p@ssw0rd!" -Force)
+
+    # Step 4: Start Playit and set up RDP tunnel
+    - name: Start Playit and Set Up RDP Tunnel
+      env:
+        PLAYIT_AUTH_KEY: ${{ secrets.PL }}
+      run: |
+        Start-Process -FilePath "$env:USERPROFILE\playit.exe" -ArgumentList "--secret $env:PLAYIT_AUTH_KEY" -NoNewWindow -Wait
+
+    # Step 5: Keep the GitHub Action Runner Alive
+    - name: Keep the GitHub Action Runner Alive
+      run: |
+        while ($true) {
+          Write-Output "Session is alive - $(Get-Date)"
+          Start-Sleep -Seconds 300
+        }
+        
+    # Step 6: Trigger the workflow again
+    - name: Trigger New Workflow Run
+      if: always()
+      env:
+        REPO_PAT: ${{ secrets.REPO_PAT }}
+      run: |
+        $payload = @"
+        {
+          "ref": "main"
+        }
+        "@
+
+        Invoke-RestMethod `
+          -Method POST `
+          -Uri "https://api.github.com/repos/${{ github.repository }}/actions/workflows/rdp.yml/dispatches" `
+          -Headers @{
+            Authorization = "token $env:REPO_PAT"
+            Accept = "application/vnd.github.v3+json"
+          } `
+          -Body $payload
