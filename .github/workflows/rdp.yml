@@ -1,4 +1,4 @@
-name: Gmail-RDP
+name: Tajbir-RDP
 
 on:
   workflow_dispatch:
